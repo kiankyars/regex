@@ -199,6 +199,17 @@ run_test "(?:a|b){2}" "ab" "MATCH:ab" "non-capturing quantified alternation"
 run_test "^$" "" "MATCH:" "empty string with both anchors"
 run_test "[\\\\]" "a\\b" "MATCH:\\" "backslash in character class"
 
+# === CASE-INSENSITIVE MATCHING ===
+run_test "(?i:hello)" "HELLO world" "MATCH:HELLO" "case-insensitive basic"
+run_test "(?i:abc)" "AbC" "MATCH:AbC" "case-insensitive mixed case"
+run_test "(?i:abc)" "xyz" "NO_MATCH" "case-insensitive no match"
+run_test "(?i:[a-z]+)" "HELLO" "MATCH:HELLO" "case-insensitive char range"
+run_test "a(?i:b)c" "aBc" "MATCH:aBc" "case-insensitive scoped middle"
+run_test "a(?i:b)c" "ABC" "NO_MATCH" "case-insensitive scope limits"
+
+# === MULTI-DIGIT BACKREFERENCES ===
+run_test "(a)(b)(c)(d)(e)(f)(g)(h)(i)(j)\\10" "abcdefghijj" "MATCH:abcdefghijj" "multi-digit backref \\10"
+
 # === REPORT ===
 echo ""
 echo "================================"

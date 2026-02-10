@@ -47,6 +47,10 @@ pub enum AstNode {
         node: Box<AstNode>,
         positive: bool,
     },
+    /// Case-insensitive wrapper `(?i:...)` — contents match case-insensitively.
+    CaseInsensitive {
+        node: Box<AstNode>,
+    },
 }
 
 /// Kind of quantifier.

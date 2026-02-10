@@ -216,9 +216,17 @@ impl Parser {
             Some('b') => Ok(AstNode::Anchor(AnchorKind::WordBoundary)),
             Some('B') => Ok(AstNode::Anchor(AnchorKind::NonWordBoundary)),
             Some(ch) if ch.is_ascii_digit() && ch != '0' => {
-                // Backreference \1 through \9
-                let idx = (ch as u8 - b'0') as usize;
-                Ok(AstNode::Backreference(idx))
+                // Backreference \1, \2, ..., \99, etc. (multi-digit)
+                let mut num = (ch as u8 - b'0') as usize;
+                while let Some(next) = self.peek() {
+                    if next.is_ascii_digit() {
+                        num = num * 10 + (next as u8 - b'0') as usize;
+                        self.advance();
+                    } else {
+                        break;
+                    }
+                }
+                Ok(AstNode::Backreference(num))
             }
             Some('n') => Ok(AstNode::Literal('\n')),
             Some('r') => Ok(AstNode::Literal('\r')),
@@ -285,6 +293,20 @@ impl Parser {
                             })
                         }
                         _ => Err("Invalid lookbehind syntax".to_string()),
+                    }
+                }
+                Some('i') => {
+                    self.advance(); // consume 'i'
+                    if self.peek() == Some(':') {
+                        // (?i:...) — case-insensitive non-capturing group
+                        self.advance();
+                        let node = self.parse_alternation()?;
+                        self.expect(')')?;
+                        Ok(AstNode::CaseInsensitive {
+                            node: Box::new(node),
+                        })
+                    } else {
+                        Err("Unsupported flag syntax; use (?i:...) for case-insensitive groups".to_string())
                     }
                 }
                 _ => Err("Invalid group syntax after '(?'".to_string()),

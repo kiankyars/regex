@@ -42,6 +42,10 @@ pub enum Inst {
     LookbehindNegative(usize, usize),
     /// No-op (used as placeholder).
     Nop,
+    /// Begin case-insensitive matching.
+    CaseInsensitiveOn,
+    /// End case-insensitive matching.
+    CaseInsensitiveOff,
 }
 
 /// Compiled program.
@@ -193,6 +197,11 @@ fn emit(insts: &mut Vec<Inst>, node: &AstNode) {
             } else {
                 insts[lb_pc] = Inst::LookbehindNegative(sub_start, sub_end);
             }
+        }
+        AstNode::CaseInsensitive { node: sub } => {
+            insts.push(Inst::CaseInsensitiveOn);
+            emit(insts, sub);
+            insts.push(Inst::CaseInsensitiveOff);
         }
     }
 }

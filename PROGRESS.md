@@ -1,7 +1,7 @@
 # Regex Engine — Progress Tracker
 
 ## Current Status
-- **Pass rate:** 100% (69/69 tests passing)
+- **Pass rate:** 100% (76/76 tests passing)
 - **Last updated:** 2026-02-10
 
 ## Priority Tasks (High → Low)
@@ -25,12 +25,15 @@
 18. ~~Performance optimization~~ **DONE** — undo log for Split backtracking, recursion depth limit
 19. ~~Search optimization~~ **DONE** — first-char skip and anchored-start optimization
 20. ~~Expand test coverage~~ **DONE** — 15 new tests (quantifier edges, multi-backreference, real-world patterns, advanced lookaround, nested groups, boundary cases)
+21. ~~Multi-digit backreferences~~ **DONE** — parser now handles `\10`, `\12`, etc. (was limited to `\1`-`\9`)
+22. ~~Case-insensitive flag `(?i:...)`~~ **DONE** — new `CaseInsensitive` AST node, `CaseInsensitiveOn/Off` VM instructions, applies to literals, char classes, and backreferences
 
 ## Completed Tasks
 - **2026-02-09:** Full engine implementation (parser → AST → compiler → VM). All features implemented: literals, concatenation, quantifiers (greedy/lazy), character classes, shorthand classes, anchors, alternation, groups (capturing/non-capturing), dot, escapes, bounded repetition, backreferences, lookahead/lookbehind. 97% pass rate.
 - **2026-02-09:** Fixed test harness bug (test 32): Python oracle was interpreting escape sequences in input via string interpolation. Fixed by passing pattern/input via sys.argv instead. Also added 16 new edge case tests. 100% pass rate (54/54).
 - **2026-02-09:** Performance optimization of VM. Replaced `captures.clone()` in Split with undo log (save/restore only changed slots). Added recursion depth limit (10,000) to prevent stack overflow. See `notes/vm_performance.md`. 100% pass rate (54/54).
 - **2026-02-10:** Search optimization: first-char skip (skip starting positions where first required char doesn't match) and anchored-start optimization (only try position 0 for `^`-anchored patterns). See `notes/search_optimization.md`. Added 15 new edge case tests covering quantifier edges, multi-backreference, real-world patterns (IP addresses, email-like, hex), advanced lookaround, nested groups, and boundary cases. 100% pass rate (69/69).
+- **2026-02-10:** Multi-digit backreferences (`\10`, `\12`, etc.) and case-insensitive matching (`(?i:...)`). Parser now consumes all consecutive digits for backreference numbers. New `CaseInsensitive` AST node with `CaseInsensitiveOn/Off` bytecode instructions. CI mode applies to `Char`, `CharClass` (including ranges), and `Backref` instructions. Uses a depth counter for proper nesting. 7 new tests added. 100% pass rate (76/76).
 
 ## Known Issues
 - ~~Test 32 (escaped backslash)~~: **FIXED.** The Python oracle was using string interpolation which caused Python escape interpretation. Fixed by passing values via `sys.argv`.

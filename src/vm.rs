@@ -35,7 +35,7 @@ pub fn search(program: &Program, input: &str) -> Option<MatchResult> {
         let mut captures = vec![None; n_slots];
         captures[0] = Some(0);
         let mut undo_log = Vec::new();
-        if exec(program, &chars, 0, 0, &mut captures, &mut undo_log, 0) {
+        if exec(program, &chars, 0, 0, &mut captures, &mut undo_log, 0, 0) {
             captures[1] = Some(captures[1].unwrap_or(0));
             let end = captures[1].unwrap();
             return Some(MatchResult {
@@ -64,7 +64,7 @@ pub fn search(program: &Program, input: &str) -> Option<MatchResult> {
         let mut captures = vec![None; n_slots];
         captures[0] = Some(start);
         let mut undo_log = Vec::new();
-        if exec(program, &chars, start, 0, &mut captures, &mut undo_log, 0) {
+        if exec(program, &chars, start, 0, &mut captures, &mut undo_log, 0, 0) {
             captures[1] = Some(captures[1].unwrap_or(start));
             let end = captures[1].unwrap();
             return Some(MatchResult {
@@ -77,11 +77,25 @@ pub fn search(program: &Program, input: &str) -> Option<MatchResult> {
     None
 }
 
+/// Compare two characters, optionally case-insensitively.
+fn char_eq(a: char, b: char, case_insensitive: bool) -> bool {
+    if a == b {
+        return true;
+    }
+    if case_insensitive {
+        a.to_ascii_lowercase() == b.to_ascii_lowercase()
+    } else {
+        false
+    }
+}
+
 /// Execute the VM from a given position and instruction pointer.
 /// Returns true if a match is found.
 ///
 /// Uses an undo log to efficiently save/restore capture slots on backtracking,
 /// avoiding full Vec clones on every Split instruction.
+///
+/// `ci_depth` tracks nested case-insensitive regions (>0 means active).
 fn exec(
     program: &Program,
     chars: &[char],
@@ -90,6 +104,7 @@ fn exec(
     captures: &mut [Option<usize>],
     undo_log: &mut Vec<UndoEntry>,
     depth: usize,
+    ci_depth: usize,
 ) -> bool {
     if depth > MAX_DEPTH {
         return false;
@@ -97,6 +112,7 @@ fn exec(
 
     let mut pos = pos;
     let mut pc = pc;
+    let mut ci_depth = ci_depth;
 
     loop {
         if pc >= program.insts.len() {
@@ -109,7 +125,7 @@ fn exec(
                 return true;
             }
             Inst::Char(expected) => {
-                if pos < chars.len() && chars[pos] == *expected {
+                if pos < chars.len() && char_eq(chars[pos], *expected, ci_depth > 0) {
                     pos += 1;
                     pc += 1;
                 } else {
@@ -125,7 +141,7 @@ fn exec(
                 }
             }
             Inst::CharClass { ranges, negated } => {
-                if pos < chars.len() && char_class_matches(chars[pos], ranges, *negated) {
+                if pos < chars.len() && char_class_matches(chars[pos], ranges, *negated, ci_depth > 0) {
                     pos += 1;
                     pc += 1;
                 } else {
@@ -148,7 +164,8 @@ fn exec(
                 let second = *second;
                 // Save undo log position before trying first branch
                 let undo_mark = undo_log.len();
-                if exec(program, chars, pos, first, captures, undo_log, depth + 1) {
+                let saved_ci = ci_depth;
+                if exec(program, chars, pos, first, captures, undo_log, depth + 1, ci_depth) {
                     return true;
                 }
                 // Restore captures from undo log
@@ -156,6 +173,7 @@ fn exec(
                     let (slot, old_val) = undo_log.pop().unwrap();
                     captures[slot] = old_val;
                 }
+                ci_depth = saved_ci;
                 // Try second branch (tail call — continue loop)
                 pc = second;
             }
@@ -202,7 +220,12 @@ fn exec(
                     (Some(gs), Some(ge)) => {
                         let group_len = ge - gs;
                         if pos + group_len <= chars.len()
-                            && chars[gs..ge] == chars[pos..pos + group_len]
+                            && if ci_depth > 0 {
+                                chars[gs..ge].iter().zip(&chars[pos..pos + group_len])
+                                    .all(|(a, b)| char_eq(*a, *b, true))
+                            } else {
+                                chars[gs..ge] == chars[pos..pos + group_len]
+                            }
                         {
                             pos += group_len;
                             pc += 1;
@@ -216,13 +239,9 @@ fn exec(
             Inst::LookaheadPositive(sub_start, sub_end) => {
                 let sub_start = *sub_start;
                 let sub_end = *sub_end;
-                // Run sub-program from current position; don't advance position.
-                // Use a separate captures copy so failure doesn't corrupt captures.
-                // On success, propagate capture groups back (positive lookahead
-                // captures are visible to the rest of the pattern).
                 let mut sub_captures: Vec<Option<usize>> = captures.to_vec();
                 let mut sub_undo = Vec::new();
-                if exec_sub(program, chars, pos, sub_start, sub_end, &mut sub_captures, &mut sub_undo, depth + 1) {
+                if exec_sub(program, chars, pos, sub_start, sub_end, &mut sub_captures, &mut sub_undo, depth + 1, ci_depth) {
                     // Propagate capture groups (skip slots 0,1 which are full match bounds)
                     for i in 2..captures.len() {
                         if sub_captures[i] != captures[i] {
@@ -240,7 +259,7 @@ fn exec(
                 let sub_end = *sub_end;
                 let mut sub_captures: Vec<Option<usize>> = captures.to_vec();
                 let mut sub_undo = Vec::new();
-                if !exec_sub(program, chars, pos, sub_start, sub_end, &mut sub_captures, &mut sub_undo, depth + 1) {
+                if !exec_sub(program, chars, pos, sub_start, sub_end, &mut sub_captures, &mut sub_undo, depth + 1, ci_depth) {
                     pc = sub_end;
                 } else {
                     return false;
@@ -255,7 +274,7 @@ fn exec(
                     let try_pos = pos - lookback;
                     let mut sub_captures: Vec<Option<usize>> = captures.to_vec();
                     let mut sub_undo = Vec::new();
-                    if exec_sub(program, chars, try_pos, sub_start, sub_end, &mut sub_captures, &mut sub_undo, depth + 1) {
+                    if exec_sub(program, chars, try_pos, sub_start, sub_end, &mut sub_captures, &mut sub_undo, depth + 1, ci_depth) {
                         // The sub-match must end exactly at `pos`
                         if sub_captures[1] == Some(pos) {
                             // Propagate capture groups back (skip slots 0,1)
@@ -284,7 +303,7 @@ fn exec(
                     let try_pos = pos - lookback;
                     let mut sub_captures: Vec<Option<usize>> = captures.to_vec();
                     let mut sub_undo = Vec::new();
-                    if exec_sub(program, chars, try_pos, sub_start, sub_end, &mut sub_captures, &mut sub_undo, depth + 1) {
+                    if exec_sub(program, chars, try_pos, sub_start, sub_end, &mut sub_captures, &mut sub_undo, depth + 1, ci_depth) {
                         if sub_captures[1] == Some(pos) {
                             found = true;
                             break;
@@ -296,6 +315,16 @@ fn exec(
                 } else {
                     return false;
                 }
+            }
+            Inst::CaseInsensitiveOn => {
+                ci_depth += 1;
+                pc += 1;
+            }
+            Inst::CaseInsensitiveOff => {
+                if ci_depth > 0 {
+                    ci_depth -= 1;
+                }
+                pc += 1;
             }
             Inst::Nop => {
                 pc += 1;
@@ -315,13 +344,14 @@ fn exec_sub(
     captures: &mut [Option<usize>],
     undo_log: &mut Vec<UndoEntry>,
     depth: usize,
+    ci_depth: usize,
 ) -> bool {
     // We run the sub-program starting at sub_start.
     // The sub-program ends with a Match instruction.
     // We save capture[1] to track where the sub-match ends.
     let old_cap1 = captures[1];
     captures[1] = None;
-    let result = exec(program, chars, pos, sub_start, captures, undo_log, depth);
+    let result = exec(program, chars, pos, sub_start, captures, undo_log, depth, ci_depth);
     if !result {
         captures[1] = old_cap1;
     }
@@ -329,18 +359,26 @@ fn exec_sub(
 }
 
 /// Check if a character matches a character class.
-fn char_class_matches(ch: char, items: &[ClassItem], negated: bool) -> bool {
+fn char_class_matches(ch: char, items: &[ClassItem], negated: bool, case_insensitive: bool) -> bool {
     let mut matched = false;
     for item in items {
         match item {
             ClassItem::Literal(c) => {
-                if ch == *c {
+                if char_eq(ch, *c, case_insensitive) {
                     matched = true;
                     break;
                 }
             }
             ClassItem::Range(lo, hi) => {
-                if ch >= *lo && ch <= *hi {
+                if case_insensitive {
+                    let ch_lower = ch.to_ascii_lowercase();
+                    let lo_lower = lo.to_ascii_lowercase();
+                    let hi_lower = hi.to_ascii_lowercase();
+                    if ch_lower >= lo_lower && ch_lower <= hi_lower {
+                        matched = true;
+                        break;
+                    }
+                } else if ch >= *lo && ch <= *hi {
                     matched = true;
                     break;
                 }
