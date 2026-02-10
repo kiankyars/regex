@@ -1,8 +1,15 @@
 /// VM executor: runs compiled bytecode against an input string.
 /// Uses recursive backtracking to support backreferences and lookaround.
+///
+/// Performance optimizations:
+/// - Undo log instead of full captures.clone() on Split (save/restore only changed slots)
+/// - Recursion depth limit to prevent stack overflow on pathological inputs
 
 use crate::ast::{ClassItem, ShorthandKind};
 use crate::compiler::{Inst, Program};
+
+/// Maximum recursion depth for the backtracking VM.
+const MAX_DEPTH: usize = 10_000;
 
 /// Result of a match attempt.
 pub struct MatchResult {
@@ -15,6 +22,9 @@ pub struct MatchResult {
     pub captures: Vec<Option<usize>>,
 }
 
+/// An entry in the undo log: (slot_index, old_value).
+type UndoEntry = (usize, Option<usize>);
+
 /// Try to find a match anywhere in the input (like `re.search`).
 pub fn search(program: &Program, input: &str) -> Option<MatchResult> {
     let chars: Vec<char> = input.chars().collect();
@@ -24,7 +34,8 @@ pub fn search(program: &Program, input: &str) -> Option<MatchResult> {
     for start in 0..=chars.len() {
         let mut captures = vec![None; n_slots];
         captures[0] = Some(start);
-        if exec(program, &chars, start, 0, &mut captures) {
+        let mut undo_log = Vec::new();
+        if exec(program, &chars, start, 0, &mut captures, &mut undo_log, 0) {
             captures[1] = Some(captures[1].unwrap_or(start));
             let end = captures[1].unwrap();
             return Some(MatchResult {
@@ -39,13 +50,22 @@ pub fn search(program: &Program, input: &str) -> Option<MatchResult> {
 
 /// Execute the VM from a given position and instruction pointer.
 /// Returns true if a match is found.
+///
+/// Uses an undo log to efficiently save/restore capture slots on backtracking,
+/// avoiding full Vec clones on every Split instruction.
 fn exec(
     program: &Program,
     chars: &[char],
     pos: usize,
     pc: usize,
-    captures: &mut Vec<Option<usize>>,
+    captures: &mut [Option<usize>],
+    undo_log: &mut Vec<UndoEntry>,
+    depth: usize,
 ) -> bool {
+    if depth > MAX_DEPTH {
+        return false;
+    }
+
     let mut pos = pos;
     let mut pc = pc;
 
@@ -97,17 +117,23 @@ fn exec(
             Inst::Split(first, second) => {
                 let first = *first;
                 let second = *second;
-                // Try first branch
-                let saved = captures.clone();
-                if exec(program, chars, pos, first, captures) {
+                // Save undo log position before trying first branch
+                let undo_mark = undo_log.len();
+                if exec(program, chars, pos, first, captures, undo_log, depth + 1) {
                     return true;
                 }
-                // Restore captures and try second branch
-                *captures = saved;
+                // Restore captures from undo log
+                while undo_log.len() > undo_mark {
+                    let (slot, old_val) = undo_log.pop().unwrap();
+                    captures[slot] = old_val;
+                }
+                // Try second branch (tail call — continue loop)
                 pc = second;
             }
             Inst::Save(slot) => {
                 let slot = *slot;
+                // Record old value in undo log before overwriting
+                undo_log.push((slot, captures[slot]));
                 captures[slot] = Some(pos);
                 pc += 1;
             }
@@ -161,9 +187,12 @@ fn exec(
             Inst::LookaheadPositive(sub_start, sub_end) => {
                 let sub_start = *sub_start;
                 let sub_end = *sub_end;
-                // Run sub-program from current position; don't advance position
-                let mut sub_captures = captures.clone();
-                if exec_sub(program, chars, pos, sub_start, sub_end, &mut sub_captures) {
+                // Run sub-program from current position; don't advance position.
+                // Lookaround uses a separate captures copy since it shouldn't
+                // modify the main captures on success/failure.
+                let mut sub_captures: Vec<Option<usize>> = captures.to_vec();
+                let mut sub_undo = Vec::new();
+                if exec_sub(program, chars, pos, sub_start, sub_end, &mut sub_captures, &mut sub_undo, depth + 1) {
                     pc = sub_end; // continue after the lookahead sub-program
                 } else {
                     return false;
@@ -172,8 +201,9 @@ fn exec(
             Inst::LookaheadNegative(sub_start, sub_end) => {
                 let sub_start = *sub_start;
                 let sub_end = *sub_end;
-                let mut sub_captures = captures.clone();
-                if !exec_sub(program, chars, pos, sub_start, sub_end, &mut sub_captures) {
+                let mut sub_captures: Vec<Option<usize>> = captures.to_vec();
+                let mut sub_undo = Vec::new();
+                if !exec_sub(program, chars, pos, sub_start, sub_end, &mut sub_captures, &mut sub_undo, depth + 1) {
                     pc = sub_end;
                 } else {
                     return false;
@@ -186,10 +216,11 @@ fn exec(
                 let mut found = false;
                 for lookback in 0..=pos {
                     let try_pos = pos - lookback;
-                    let mut sub_captures = captures.clone();
-                    if exec_sub(program, chars, try_pos, sub_start, sub_end, &mut sub_captures) {
+                    let mut sub_captures: Vec<Option<usize>> = captures.to_vec();
+                    let mut sub_undo = Vec::new();
+                    if exec_sub(program, chars, try_pos, sub_start, sub_end, &mut sub_captures, &mut sub_undo, depth + 1) {
                         // The sub-match must end exactly at `pos`
-                        if sub_captures[1] == Some(pos) || find_sub_end(&sub_captures) == Some(pos) {
+                        if sub_captures[1] == Some(pos) {
                             found = true;
                             break;
                         }
@@ -207,9 +238,10 @@ fn exec(
                 let mut found = false;
                 for lookback in 0..=pos {
                     let try_pos = pos - lookback;
-                    let mut sub_captures = captures.clone();
-                    if exec_sub(program, chars, try_pos, sub_start, sub_end, &mut sub_captures) {
-                        if sub_captures[1] == Some(pos) || find_sub_end(&sub_captures) == Some(pos) {
+                    let mut sub_captures: Vec<Option<usize>> = captures.to_vec();
+                    let mut sub_undo = Vec::new();
+                    if exec_sub(program, chars, try_pos, sub_start, sub_end, &mut sub_captures, &mut sub_undo, depth + 1) {
+                        if sub_captures[1] == Some(pos) {
                             found = true;
                             break;
                         }
@@ -236,23 +268,20 @@ fn exec_sub(
     pos: usize,
     sub_start: usize,
     _sub_end: usize,
-    captures: &mut Vec<Option<usize>>,
+    captures: &mut [Option<usize>],
+    undo_log: &mut Vec<UndoEntry>,
+    depth: usize,
 ) -> bool {
     // We run the sub-program starting at sub_start.
     // The sub-program ends with a Match instruction.
     // We save capture[1] to track where the sub-match ends.
     let old_cap1 = captures[1];
     captures[1] = None;
-    let result = exec(program, chars, pos, sub_start, captures);
+    let result = exec(program, chars, pos, sub_start, captures, undo_log, depth);
     if !result {
         captures[1] = old_cap1;
     }
     result
-}
-
-/// Helper: find end position from sub-captures.
-fn find_sub_end(captures: &[Option<usize>]) -> Option<usize> {
-    captures[1]
 }
 
 /// Check if a character matches a character class.

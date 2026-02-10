@@ -1,1 +1,0 @@
-Performance optimization (taken over from stale lock): eliminate captures.clone() in VM Split via save/restore, add recursion depth limit, reduce allocations, optimize main.rs string operations.
