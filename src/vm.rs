@@ -188,11 +188,19 @@ fn exec(
                 let sub_start = *sub_start;
                 let sub_end = *sub_end;
                 // Run sub-program from current position; don't advance position.
-                // Lookaround uses a separate captures copy since it shouldn't
-                // modify the main captures on success/failure.
+                // Use a separate captures copy so failure doesn't corrupt captures.
+                // On success, propagate capture groups back (positive lookahead
+                // captures are visible to the rest of the pattern).
                 let mut sub_captures: Vec<Option<usize>> = captures.to_vec();
                 let mut sub_undo = Vec::new();
                 if exec_sub(program, chars, pos, sub_start, sub_end, &mut sub_captures, &mut sub_undo, depth + 1) {
+                    // Propagate capture groups (skip slots 0,1 which are full match bounds)
+                    for i in 2..captures.len() {
+                        if sub_captures[i] != captures[i] {
+                            undo_log.push((i, captures[i]));
+                            captures[i] = sub_captures[i];
+                        }
+                    }
                     pc = sub_end; // continue after the lookahead sub-program
                 } else {
                     return false;
@@ -221,6 +229,13 @@ fn exec(
                     if exec_sub(program, chars, try_pos, sub_start, sub_end, &mut sub_captures, &mut sub_undo, depth + 1) {
                         // The sub-match must end exactly at `pos`
                         if sub_captures[1] == Some(pos) {
+                            // Propagate capture groups back (skip slots 0,1)
+                            for i in 2..captures.len() {
+                                if sub_captures[i] != captures[i] {
+                                    undo_log.push((i, captures[i]));
+                                    captures[i] = sub_captures[i];
+                                }
+                            }
                             found = true;
                             break;
                         }
