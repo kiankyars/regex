@@ -50,19 +50,23 @@ run_test() {
     fi
 
     # Compare against Python's re module as oracle
-    EXPECTED_OUTPUT=$(python3 -c "
+    # Pass pattern/input via argv to avoid Python string escape interpretation
+    EXPECTED_OUTPUT=$(python3 - "$pattern" "$input" <<'PYEOF'
 import re, sys
+pattern = sys.argv[1]
+text = sys.argv[2]
 try:
-    m = re.search(r'''${pattern}''', '''${input}''')
+    m = re.search(pattern, text)
     if m:
         print('MATCH:' + m.group(0))
         for i, g in enumerate(m.groups(), 1):
-            print(f'GROUP {i}:{g if g is not None else \"\"}')
+            print(f'GROUP {i}:{g if g is not None else ""}')
     else:
         print('NO_MATCH')
 except Exception as e:
     print('ERROR:' + str(e))
-" 2>&1)
+PYEOF
+)
 
     ACTUAL_OUTPUT=$($BINARY "$pattern" "$input" 2>&1) || true
 
@@ -133,6 +137,36 @@ run_test "a(?=b)" "ab" "MATCH:a" "positive lookahead"
 run_test "a(?!b)" "ac" "MATCH:a" "negative lookahead"
 run_test "(?<=a)b" "ab" "MATCH:b" "positive lookbehind"
 run_test "(?<!a)b" "cb" "MATCH:b" "negative lookbehind"
+
+# === WORD BOUNDARIES ===
+run_test "\\bfoo\\b" "a foo b" "MATCH:foo" "word boundary both sides"
+run_test "\\bhello" "hello world" "MATCH:hello" "word boundary start"
+run_test "\\Boo" "foobar" "MATCH:oo" "non-word boundary"
+
+# === NEGATED SHORTHANDS ===
+run_test "\\D+" "123abc456" "MATCH:abc" "non-digit shorthand"
+run_test "\\W" "hello world" "MATCH: " "non-word shorthand"
+run_test "\\S+" "  hello  " "MATCH:hello" "non-space shorthand"
+
+# === UNBOUNDED REPETITION ===
+run_test "a{2,}" "aaaa" "MATCH:aaaa" "at-least repetition"
+run_test "a{2,4}?" "aaaa" "MATCH:aa" "lazy range repetition"
+
+# === NESTED GROUPS ===
+run_test "((a)(b))" "ab" "MATCH:ab" "nested capturing groups"
+run_test "(cat|dog)s" "dogs" "MATCH:dogs" "alternation in group"
+
+# === GREEDY VS LAZY ===
+run_test "a(.*)b" "aXbYb" "MATCH:aXbYb" "greedy dot star"
+run_test "a(.*?)b" "aXbYb" "MATCH:aXb" "lazy dot star"
+
+# === CHAR CLASS EDGE CASES ===
+run_test "[-abc]" "-" "MATCH:-" "hyphen in char class"
+run_test "[a-z0-9]" "5" "MATCH:5" "multiple ranges in class"
+
+# === LOOKAROUND COMBOS ===
+run_test "(?=a)a" "a" "MATCH:a" "lookahead then match"
+run_test "(?=.*b)a.b" "axb" "MATCH:axb" "lookahead with dot star"
 
 # === REPORT ===
 echo ""

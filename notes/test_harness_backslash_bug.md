@@ -25,6 +25,6 @@ Our engine correctly matches a literal backslash. The test harness has a subtle 
 
 Only affects test 32. All other tests pass.
 
-## Potential Fix
+## Fix Applied
 
-The test harness could use raw strings (`r'''${input}'''`) for the input, but this would need to be done carefully as it might break other tests.
+Fixed by passing pattern and input to the Python oracle via `sys.argv` instead of string interpolation. This ensures Python receives the exact same bytes as the binary, avoiding any Python string escape interpretation. The Python script now uses a heredoc (`<<'PYEOF'`) to avoid both bash and Python escape issues.

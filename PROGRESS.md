@@ -1,7 +1,7 @@
 # Regex Engine — Progress Tracker
 
 ## Current Status
-- **Pass rate:** 97% (37/38 tests passing)
+- **Pass rate:** 100% (54/54 tests passing)
 - **Last updated:** 2026-02-09
 
 ## Priority Tasks (High → Low)
@@ -20,15 +20,16 @@
 13. ~~Implement bounded repetition: `{n}`, `{n,m}`~~ **DONE**
 14. ~~Implement backreferences: `\1`~~ **DONE**
 15. ~~Implement lookahead/lookbehind~~ **DONE**
-16. Investigate test 32 failure (escaped backslash test harness bug) — see `notes/test_harness_backslash_bug.md`
-17. Add more edge case handling and hardening
+16. ~~Investigate test 32 failure (escaped backslash test harness bug)~~ **DONE** — fixed by passing args via sys.argv
+17. ~~Add more edge case handling and hardening~~ **DONE** — added 16 new tests (word boundaries, negated shorthands, unbounded repetition, nested groups, greedy/lazy, char class edges, lookaround combos)
 18. Performance optimization
 
 ## Completed Tasks
 - **2026-02-09:** Full engine implementation (parser → AST → compiler → VM). All features implemented: literals, concatenation, quantifiers (greedy/lazy), character classes, shorthand classes, anchors, alternation, groups (capturing/non-capturing), dot, escapes, bounded repetition, backreferences, lookahead/lookbehind. 97% pass rate.
+- **2026-02-09:** Fixed test harness bug (test 32): Python oracle was interpreting escape sequences in input via string interpolation. Fixed by passing pattern/input via sys.argv instead. Also added 16 new edge case tests. 100% pass rate (54/54).
 
 ## Known Issues
-- Test 32 (escaped backslash): False failure due to Python oracle interpreting `\b` as backspace in non-raw string. Our engine is correct. See `notes/test_harness_backslash_bug.md`.
+- ~~Test 32 (escaped backslash)~~: **FIXED.** The Python oracle was using string interpolation which caused Python escape interpretation. Fixed by passing values via `sys.argv`.
 
 ## Architecture Decisions
 - **Backtracking VM:** We use a recursive backtracking VM (not Thompson NFA) because backreferences and lookaround assertions require backtracking.
