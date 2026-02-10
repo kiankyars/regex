@@ -26,6 +26,8 @@ Agents coordinate via:
 
 ```bash
 export ANTHROPIC_API_KEY=your-key-here
+# or
+claude login
 ./launch_agents.sh 2  # start 2 agents
 ```
 

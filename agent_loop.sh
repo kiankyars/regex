@@ -1,37 +1,41 @@
 #!/bin/bash
-# agent_loop.sh — runs inside each Docker container
+# agent_loop.sh — run in a screen session per agent
+# Usage: AGENT_ID=1 ./agent_loop.sh
 
-set -e
+AGENT_ID="${AGENT_ID:-0}"
+REPO="git@github.com:kiankyars/regex.git"
+WORKSPACE="$(pwd)/workspace-${AGENT_ID}"
 
-UPSTREAM="/upstream"
-WORKSPACE="/workspace"
-
-# Clone from the bare upstream repo
+# Clone if needed
 if [ ! -d "$WORKSPACE/.git" ]; then
-    git clone "$UPSTREAM" "$WORKSPACE"
+    git clone "$REPO" "$WORKSPACE"
 fi
 
 cd "$WORKSPACE"
-git config user.name "agent-${AGENT_ID:-0}"
-git config user.email "agent-${AGENT_ID:-0}@regex-agents"
+git config user.name "agent-${AGENT_ID}"
+git config user.email "agent-${AGENT_ID}@regex-agents"
 
-mkdir -p agent_logs
+mkdir -p agent_logs current_tasks notes
 
 while true; do
-    # Pull latest changes
-    git pull --rebase origin main || git pull origin main
+    git pull --rebase origin main 2>/dev/null || git pull origin main
 
     COMMIT=$(git rev-parse --short=6 HEAD)
-    LOGFILE="agent_logs/agent_${AGENT_ID:-0}_${COMMIT}_$(date +%s).log"
+    LOGFILE="agent_logs/agent_${AGENT_ID}_${COMMIT}_$(date +%s).log"
 
-    echo "[$(date)] Agent ${AGENT_ID:-0} starting session at commit ${COMMIT}" | tee -a "$LOGFILE"
+    echo "[$(date)] Agent ${AGENT_ID} starting session at ${COMMIT}"
 
     claude --dangerously-skip-permissions \
            -p "$(cat AGENT_PROMPT.md)" \
            --model claude-opus-4-6 &>> "$LOGFILE"
 
-    echo "[$(date)] Agent ${AGENT_ID:-0} session ended" >> "$LOGFILE"
+    EXIT_CODE=$?
+    echo "[$(date)] Agent ${AGENT_ID} session ended (exit $EXIT_CODE)"
 
-    # Brief pause to avoid hammering if something goes wrong
-    sleep 5
+    if [ $EXIT_CODE -ne 0 ]; then
+        echo "[$(date)] Backing off 60s..."
+        sleep 60
+    else
+        sleep 5
+    fi
 done
