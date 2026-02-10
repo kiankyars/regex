@@ -1,0 +1,1 @@
+Performance optimization: eliminate captures.clone() in VM Split, add recursion depth limit, reduce allocations.
