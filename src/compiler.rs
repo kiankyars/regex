@@ -42,10 +42,10 @@ pub enum Inst {
     LookbehindNegative(usize, usize),
     /// No-op (used as placeholder).
     Nop,
-    /// Activate inline flags (push onto flag stack).
-    FlagsOn(crate::ast::RegexFlags),
-    /// Deactivate inline flags (pop from flag stack).
-    FlagsOff(crate::ast::RegexFlags),
+    /// Begin case-insensitive matching.
+    CaseInsensitiveOn,
+    /// End case-insensitive matching.
+    CaseInsensitiveOff,
 }
 
 /// Compiled program.
@@ -198,10 +198,10 @@ fn emit(insts: &mut Vec<Inst>, node: &AstNode) {
                 insts[lb_pc] = Inst::LookbehindNegative(sub_start, sub_end);
             }
         }
-        AstNode::InlineFlags { node: sub, flags } => {
-            insts.push(Inst::FlagsOn(*flags));
+        AstNode::CaseInsensitive { node: sub } => {
+            insts.push(Inst::CaseInsensitiveOn);
             emit(insts, sub);
-            insts.push(Inst::FlagsOff(*flags));
+            insts.push(Inst::CaseInsensitiveOff);
         }
     }
 }

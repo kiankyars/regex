@@ -5,22 +5,11 @@
 /// - Undo log instead of full captures.clone() on Split (save/restore only changed slots)
 /// - Recursion depth limit to prevent stack overflow on pathological inputs
 
-use crate::ast::{ClassItem, RegexFlags, ShorthandKind};
+use crate::ast::{ClassItem, ShorthandKind};
 use crate::compiler::{Inst, Program};
 
 /// Maximum recursion depth for the backtracking VM.
 const MAX_DEPTH: usize = 10_000;
-
-/// Active flag state — depth counters for nested flag regions.
-#[derive(Clone, Copy, Default)]
-struct FlagState {
-    /// Case-insensitive depth (>0 means active).
-    ci: usize,
-    /// Dotall depth (>0 means `.` matches `\n`).
-    dotall: usize,
-    /// Multiline depth (>0 means `^`/`$` match line boundaries).
-    multiline: usize,
-}
 
 /// Result of a match attempt.
 pub struct MatchResult {
@@ -46,16 +35,7 @@ pub fn search(program: &Program, input: &str) -> Option<MatchResult> {
         let mut captures = vec![None; n_slots];
         captures[0] = Some(0);
         let mut undo_log = Vec::new();
-        if exec(
-            program,
-            &chars,
-            0,
-            0,
-            &mut captures,
-            &mut undo_log,
-            0,
-            FlagState::default(),
-        ) {
+        if exec(program, &chars, 0, 0, &mut captures, &mut undo_log, 0, 0) {
             captures[1] = Some(captures[1].unwrap_or(0));
             let end = captures[1].unwrap();
             return Some(MatchResult {
@@ -84,16 +64,7 @@ pub fn search(program: &Program, input: &str) -> Option<MatchResult> {
         let mut captures = vec![None; n_slots];
         captures[0] = Some(start);
         let mut undo_log = Vec::new();
-        if exec(
-            program,
-            &chars,
-            start,
-            0,
-            &mut captures,
-            &mut undo_log,
-            0,
-            FlagState::default(),
-        ) {
+        if exec(program, &chars, start, 0, &mut captures, &mut undo_log, 0, 0) {
             captures[1] = Some(captures[1].unwrap_or(start));
             let end = captures[1].unwrap();
             return Some(MatchResult {
@@ -124,7 +95,7 @@ fn char_eq(a: char, b: char, case_insensitive: bool) -> bool {
 /// Uses an undo log to efficiently save/restore capture slots on backtracking,
 /// avoiding full Vec clones on every Split instruction.
 ///
-/// `flags` tracks nested inline flag regions.
+/// `ci_depth` tracks nested case-insensitive regions (>0 means active).
 fn exec(
     program: &Program,
     chars: &[char],
@@ -133,7 +104,7 @@ fn exec(
     captures: &mut [Option<usize>],
     undo_log: &mut Vec<UndoEntry>,
     depth: usize,
-    flags: FlagState,
+    ci_depth: usize,
 ) -> bool {
     if depth > MAX_DEPTH {
         return false;
@@ -141,7 +112,7 @@ fn exec(
 
     let mut pos = pos;
     let mut pc = pc;
-    let mut flags = flags;
+    let mut ci_depth = ci_depth;
 
     loop {
         if pc >= program.insts.len() {
@@ -154,7 +125,7 @@ fn exec(
                 return true;
             }
             Inst::Char(expected) => {
-                if pos < chars.len() && char_eq(chars[pos], *expected, flags.ci > 0) {
+                if pos < chars.len() && char_eq(chars[pos], *expected, ci_depth > 0) {
                     pos += 1;
                     pc += 1;
                 } else {
@@ -162,7 +133,7 @@ fn exec(
                 }
             }
             Inst::AnyChar => {
-                if pos < chars.len() && (flags.dotall > 0 || chars[pos] != '\n') {
+                if pos < chars.len() && chars[pos] != '\n' {
                     pos += 1;
                     pc += 1;
                 } else {
@@ -170,9 +141,7 @@ fn exec(
                 }
             }
             Inst::CharClass { ranges, negated } => {
-                if pos < chars.len()
-                    && char_class_matches(chars[pos], ranges, *negated, flags.ci > 0)
-                {
+                if pos < chars.len() && char_class_matches(chars[pos], ranges, *negated, ci_depth > 0) {
                     pos += 1;
                     pc += 1;
                 } else {
@@ -195,8 +164,8 @@ fn exec(
                 let second = *second;
                 // Save undo log position before trying first branch
                 let undo_mark = undo_log.len();
-                let saved_flags = flags;
-                if exec(program, chars, pos, first, captures, undo_log, depth + 1, flags) {
+                let saved_ci = ci_depth;
+                if exec(program, chars, pos, first, captures, undo_log, depth + 1, ci_depth) {
                     return true;
                 }
                 // Restore captures from undo log
@@ -204,7 +173,7 @@ fn exec(
                     let (slot, old_val) = undo_log.pop().unwrap();
                     captures[slot] = old_val;
                 }
-                flags = saved_flags;
+                ci_depth = saved_ci;
                 // Try second branch (tail call — continue loop)
                 pc = second;
             }
@@ -216,14 +185,14 @@ fn exec(
                 pc += 1;
             }
             Inst::AssertStart => {
-                if pos == 0 || (flags.multiline > 0 && pos > 0 && chars[pos - 1] == '\n') {
+                if pos == 0 {
                     pc += 1;
                 } else {
                     return false;
                 }
             }
             Inst::AssertEnd => {
-                if pos == chars.len() || (flags.multiline > 0 && pos < chars.len() && chars[pos] == '\n') {
+                if pos == chars.len() {
                     pc += 1;
                 } else {
                     return false;
@@ -251,7 +220,7 @@ fn exec(
                     (Some(gs), Some(ge)) => {
                         let group_len = ge - gs;
                         if pos + group_len <= chars.len()
-                            && if flags.ci > 0 {
+                            && if ci_depth > 0 {
                                 chars[gs..ge].iter().zip(&chars[pos..pos + group_len])
                                     .all(|(a, b)| char_eq(*a, *b, true))
                             } else {
@@ -272,17 +241,7 @@ fn exec(
                 let sub_end = *sub_end;
                 let mut sub_captures: Vec<Option<usize>> = captures.to_vec();
                 let mut sub_undo = Vec::new();
-                if exec_sub(
-                    program,
-                    chars,
-                    pos,
-                    sub_start,
-                    sub_end,
-                    &mut sub_captures,
-                    &mut sub_undo,
-                    depth + 1,
-                    flags,
-                ) {
+                if exec_sub(program, chars, pos, sub_start, sub_end, &mut sub_captures, &mut sub_undo, depth + 1, ci_depth) {
                     // Propagate capture groups (skip slots 0,1 which are full match bounds)
                     for i in 2..captures.len() {
                         if sub_captures[i] != captures[i] {
@@ -300,17 +259,7 @@ fn exec(
                 let sub_end = *sub_end;
                 let mut sub_captures: Vec<Option<usize>> = captures.to_vec();
                 let mut sub_undo = Vec::new();
-                if !exec_sub(
-                    program,
-                    chars,
-                    pos,
-                    sub_start,
-                    sub_end,
-                    &mut sub_captures,
-                    &mut sub_undo,
-                    depth + 1,
-                    flags,
-                ) {
+                if !exec_sub(program, chars, pos, sub_start, sub_end, &mut sub_captures, &mut sub_undo, depth + 1, ci_depth) {
                     pc = sub_end;
                 } else {
                     return false;
@@ -325,17 +274,7 @@ fn exec(
                     let try_pos = pos - lookback;
                     let mut sub_captures: Vec<Option<usize>> = captures.to_vec();
                     let mut sub_undo = Vec::new();
-                    if exec_sub(
-                        program,
-                        chars,
-                        try_pos,
-                        sub_start,
-                        sub_end,
-                        &mut sub_captures,
-                        &mut sub_undo,
-                        depth + 1,
-                        flags,
-                    ) {
+                    if exec_sub(program, chars, try_pos, sub_start, sub_end, &mut sub_captures, &mut sub_undo, depth + 1, ci_depth) {
                         // The sub-match must end exactly at `pos`
                         if sub_captures[1] == Some(pos) {
                             // Propagate capture groups back (skip slots 0,1)
@@ -364,17 +303,7 @@ fn exec(
                     let try_pos = pos - lookback;
                     let mut sub_captures: Vec<Option<usize>> = captures.to_vec();
                     let mut sub_undo = Vec::new();
-                    if exec_sub(
-                        program,
-                        chars,
-                        try_pos,
-                        sub_start,
-                        sub_end,
-                        &mut sub_captures,
-                        &mut sub_undo,
-                        depth + 1,
-                        flags,
-                    ) {
+                    if exec_sub(program, chars, try_pos, sub_start, sub_end, &mut sub_captures, &mut sub_undo, depth + 1, ci_depth) {
                         if sub_captures[1] == Some(pos) {
                             found = true;
                             break;
@@ -387,12 +316,14 @@ fn exec(
                     return false;
                 }
             }
-            Inst::FlagsOn(flag_delta) => {
-                apply_flags_on(&mut flags, *flag_delta);
+            Inst::CaseInsensitiveOn => {
+                ci_depth += 1;
                 pc += 1;
             }
-            Inst::FlagsOff(flag_delta) => {
-                apply_flags_off(&mut flags, *flag_delta);
+            Inst::CaseInsensitiveOff => {
+                if ci_depth > 0 {
+                    ci_depth -= 1;
+                }
                 pc += 1;
             }
             Inst::Nop => {
@@ -413,42 +344,18 @@ fn exec_sub(
     captures: &mut [Option<usize>],
     undo_log: &mut Vec<UndoEntry>,
     depth: usize,
-    flags: FlagState,
+    ci_depth: usize,
 ) -> bool {
     // We run the sub-program starting at sub_start.
     // The sub-program ends with a Match instruction.
     // We save capture[1] to track where the sub-match ends.
     let old_cap1 = captures[1];
     captures[1] = None;
-    let result = exec(program, chars, pos, sub_start, captures, undo_log, depth, flags);
+    let result = exec(program, chars, pos, sub_start, captures, undo_log, depth, ci_depth);
     if !result {
         captures[1] = old_cap1;
     }
     result
-}
-
-fn apply_flags_on(state: &mut FlagState, delta: RegexFlags) {
-    if delta.case_insensitive {
-        state.ci += 1;
-    }
-    if delta.dotall {
-        state.dotall += 1;
-    }
-    if delta.multiline {
-        state.multiline += 1;
-    }
-}
-
-fn apply_flags_off(state: &mut FlagState, delta: RegexFlags) {
-    if delta.case_insensitive && state.ci > 0 {
-        state.ci -= 1;
-    }
-    if delta.dotall && state.dotall > 0 {
-        state.dotall -= 1;
-    }
-    if delta.multiline && state.multiline > 0 {
-        state.multiline -= 1;
-    }
 }
 
 /// Check if a character matches a character class.
