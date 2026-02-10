@@ -1,0 +1,1 @@
+Fixing test 32 failure by passing pattern/input to Python oracle via sys.argv instead of string interpolation.
