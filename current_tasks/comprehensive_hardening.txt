@@ -1,0 +1,1 @@
+Comprehensive edge case tests, bug fixes, and multi-digit backreference support

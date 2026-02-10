@@ -1,1 +1,0 @@
-Committing stale lookaround capture propagation fix, expanding test coverage with harder edge cases, fixing any regressions found.
