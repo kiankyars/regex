@@ -207,8 +207,125 @@ run_test "(?i:[a-z]+)" "HELLO" "MATCH:HELLO" "case-insensitive char range"
 run_test "a(?i:b)c" "aBc" "MATCH:aBc" "case-insensitive scoped middle"
 run_test "a(?i:b)c" "ABC" "NO_MATCH" "case-insensitive scope limits"
 
+# === EMPTY PATTERN AND ALTERNATION BRANCHES ===
+run_test "" "hello" "MATCH:" "empty pattern matches empty"
+run_test "a|" "b" "MATCH:" "empty alternation branch"
+run_test "|a" "b" "MATCH:" "leading empty alternation"
+run_test "(a|)" "b" "MATCH:" "empty branch in group"
+run_test "^a|b" "ba" "MATCH:b" "caret only in first alternative"
+run_test "^a|^b" "b" "MATCH:b" "both alternatives anchored"
+
+# === ZERO-WIDTH AND ZERO-COUNT QUANTIFIERS ===
+run_test "a{0}b" "b" "MATCH:b" "zero exact quantifier"
+run_test "a{0,0}" "a" "MATCH:" "zero range quantifier"
+run_test "a{0,5}" "aaa" "MATCH:aaa" "range from zero"
+run_test "a*" "" "MATCH:" "star on empty input"
+run_test "(a?)" "" "MATCH:" "optional capture on empty"
+run_test "a{1,1}" "a" "MATCH:a" "range where min equals max"
+
 # === MULTI-DIGIT BACKREFERENCES ===
-run_test "(a)(b)(c)(d)(e)(f)(g)(h)(i)(j)\\10" "abcdefghijj" "MATCH:abcdefghijj" "multi-digit backref \\10"
+run_test "(a)(b)(c)(d)(e)(f)(g)(h)(i)(j)\\10" "abcdefghijj" "MATCH:abcdefghijj" "backref to 10th group"
+run_test "(a)(b)(c)(d)(e)(f)(g)(h)(i)(j)(k)\\11" "abcdefghijkk" "MATCH:abcdefghijkk" "backref to 11th group"
+
+# === QUANTIFIED BACKREFERENCES ===
+run_test "(a)\\1+" "aaaa" "MATCH:aaaa" "quantified backreference plus"
+run_test "(\\w)\\1{2}" "aaa" "MATCH:aaa" "backref with exact repetition"
+run_test "(a){3}\\1" "aaaa" "MATCH:aaaa" "quantified group then backref"
+
+# === COMPLEX BACKREFERENCE PATTERNS ===
+run_test "(a+)(b+)\\2\\1" "aabbbbaa" "MATCH:aabbbbaa" "reversed double backref"
+run_test "(a)(b)(c)\\3\\2\\1" "abccba" "MATCH:abccba" "three backrefs reversed"
+run_test "(\\d)(\\d)\\2\\1" "1221" "MATCH:1221" "digit palindrome via backref"
+run_test "(a*)(b*)\\1\\2" "abab" "MATCH:abab" "double backref with star groups"
+
+# === OPTIONAL GROUP BACKREFERENCE ===
+run_test "(a)?\\1" "b" "NO_MATCH" "optional group backref unmatched"
+
+# === LAZY QUANTIFIER EDGE CASES ===
+run_test "a??b" "ab" "MATCH:ab" "lazy question mark"
+run_test "a??b" "b" "MATCH:b" "lazy question match empty"
+run_test "a{1,3}?" "aaa" "MATCH:a" "lazy range quantifier"
+run_test "(a{2,3}?)(a*)" "aaaa" "MATCH:aaaa" "lazy min then greedy rest"
+run_test "a{2,}?" "aaaa" "MATCH:aa" "lazy at-least"
+
+# === LOOKAROUND EDGE CASES ===
+run_test "(?<=a)(?=b)" "ab" "MATCH:" "lookbehind then lookahead zero-width"
+run_test "^(?!.*bad).*$" "this is good" "MATCH:this is good" "neg lookahead at start"
+run_test "^(?!.*bad).*$" "this is bad" "NO_MATCH" "neg lookahead at start fail"
+run_test "(?=a+)a{3}" "aaaa" "MATCH:aaa" "lookahead with quantifier"
+run_test "(?:(?=a)a)+" "aaa" "MATCH:aaa" "lookahead inside repetition"
+run_test "(?=(a+?))\\1" "aaa" "MATCH:a" "lookahead capture then backref"
+run_test "a(?=.)." "ab" "MATCH:ab" "lookahead then dot"
+run_test "(?=a)(?=ab)ab" "ab" "MATCH:ab" "double lookahead"
+run_test "(?<=ab)cd" "abcd" "MATCH:cd" "lookbehind fixed string"
+run_test "a(?!b)." "ac" "MATCH:ac" "neg lookahead then dot"
+run_test "(?<=\\d)\\w+" "a1bc" "MATCH:bc" "lookbehind digit then word"
+run_test "(?<=\\W)\\w+" "-hello" "MATCH:hello" "lookbehind non-word then word"
+
+# === NESTED GROUP CAPTURES ===
+run_test "(a(b)c)" "abc" "MATCH:abc" "nested group capture"
+run_test "((a+)(b+))(c+)" "aabbbcc" "MATCH:aabbbcc" "complex nested groups"
+run_test "(a|(b))" "b" "MATCH:b" "alternation with nested group"
+run_test "(?:a|(b))c" "bc" "MATCH:bc" "non-cap with alt and cap"
+run_test "(a)|(b)" "b" "MATCH:b" "top-level alt with groups"
+run_test "((.)*)" "abc" "MATCH:abc" "dot star in nested group"
+run_test "(a|b){3}" "aba" "MATCH:aba" "alternation group repeated"
+run_test "(?:(?:a))" "a" "MATCH:a" "double nested non-cap"
+
+# === NESTED QUANTIFIERS ===
+run_test "(a+)+" "aaa" "MATCH:aaa" "plus inside plus"
+run_test "(a*)*" "aaa" "MATCH:aaa" "star inside star"
+run_test "(a+)*" "aaa" "MATCH:aaa" "plus inside star"
+run_test "(a?)*" "aaa" "MATCH:aaa" "question inside star"
+run_test "(a|b)*" "aba" "MATCH:aba" "alternation in star"
+run_test "(a+|b+)*" "aabb" "MATCH:aabb" "greedy alt in star"
+
+# === REAL-WORLD PATTERNS (EXTENDED) ===
+run_test "(\\d{4})-(\\d{2})-(\\d{2})" "2024-01-15" "MATCH:2024-01-15" "date pattern"
+run_test "\\d{3}-\\d{4}" "555-1234" "MATCH:555-1234" "phone number pattern"
+run_test "([^,]+),\\s*([^,]+)" "Smith, John" "MATCH:Smith, John" "CSV-like pattern"
+run_test "[a-zA-Z_]\\w*" "_hello123" "MATCH:_hello123" "identifier pattern"
+run_test "^\\s*$" "   " "MATCH:   " "whitespace only"
+run_test "^\\s*$" "  a  " "NO_MATCH" "whitespace with char fail"
+run_test "<[^>]+>" "<hello>" "MATCH:<hello>" "negated class pattern"
+run_test "[\\w-]+" "foo-bar" "MATCH:foo-bar" "word chars and hyphen class"
+run_test "<(.+?)>.*?</\\1>" "<b>text</b>" "MATCH:<b>text</b>" "html tag matching"
+
+# === WORD BOUNDARY EDGE CASES ===
+run_test "\\b" "" "NO_MATCH" "word boundary on empty string"
+run_test "\\ba\\b" "a" "MATCH:a" "standalone word"
+run_test "^\\b\\w+\\b$" "hello" "MATCH:hello" "full word boundaries"
+run_test "(?<=\\w)\\b(?=\\s)" "abc def" "MATCH:" "lookbehind+boundary+lookahead"
+
+# === CHARACTER CLASS EDGE CASES (EXTENDED) ===
+run_test "[]a]" "]" "MATCH:]" "bracket as first in class"
+run_test "[^]]" "a" "MATCH:a" "negated bracket in class"
+run_test "[\\^\\]]" "^" "MATCH:^" "escaped caret in class"
+run_test "[\\^\\]]" "]" "MATCH:]" "escaped bracket in class"
+run_test "[\\d\\s]+" "1 2 3" "MATCH:1 2 3" "multi shorthand in class"
+run_test "[^\\d]+" "abc123" "MATCH:abc" "negated shorthand in class"
+
+# === BRACE LITERAL FALLBACK ===
+run_test "}" "}" "MATCH:}" "unescaped closing brace"
+run_test "{" "{" "MATCH:{" "unescaped opening brace"
+run_test "{abc}" "{abc}" "MATCH:{abc}" "braces as literals"
+
+# === COMBINED ASSERTIONS ===
+run_test "^a.*b$" "a  b" "MATCH:a  b" "anchored both with content"
+run_test "^a.*b$" "a  b " "NO_MATCH" "anchored both fail"
+run_test "^(a|b)+$" "abba" "MATCH:abba" "anchored alternation repeated"
+run_test "a?a?a?aaa" "aaa" "MATCH:aaa" "classic NFA pattern"
+
+# === BACKREF IN ALTERNATION ===
+run_test "(a)(\\1|b)" "aa" "MATCH:aa" "backref in alternation match"
+run_test "(a)(\\1|b)" "ab" "MATCH:ab" "backref in alternation alt"
+
+# === EMPTY GROUP ===
+run_test "()a" "a" "MATCH:a" "empty group before literal"
+run_test "()*" "" "MATCH:" "empty group star on empty"
+
+# === LAZY THEN GREEDY INTERACTION ===
+run_test "(a+?)(a+)" "aaaa" "MATCH:aaaa" "lazy then greedy captures all"
 
 # === REPORT ===
 echo ""

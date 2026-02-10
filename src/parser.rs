@@ -124,11 +124,19 @@ impl Parser {
 
         // Try to parse as a quantifier, fall back to literal if it doesn't parse
         match self.try_parse_brace_contents() {
-            Ok((kind, greedy)) => Ok(AstNode::Quantifier {
-                node: Box::new(node),
-                kind,
-                greedy,
-            }),
+            Ok((kind, greedy)) => {
+                // Validate range: min must not exceed max
+                if let QuantifierKind::Range(n, m) = &kind {
+                    if n > m {
+                        return Err(format!("min repeat greater than max repeat"));
+                    }
+                }
+                Ok(AstNode::Quantifier {
+                    node: Box::new(node),
+                    kind,
+                    greedy,
+                })
+            }
             Err(_) => {
                 // Not a valid quantifier, revert position — the '{' was a literal
                 self.pos = save_pos;
