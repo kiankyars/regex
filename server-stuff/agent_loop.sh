@@ -2,9 +2,33 @@
 # agent_loop.sh — run in a screen session per agent
 # Usage: AGENT_ID=1 ./agent_loop.sh
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 AGENT_ID="${AGENT_ID:-0}"
-REPO="git@github.com:kiankyars/regex.git"
-WORKSPACE="$(pwd)/workspace-${AGENT_ID}"
+
+if [ -z "${REPO:-}" ]; then
+    if [ -d "${SCRIPT_DIR}/../regex/.git" ]; then
+        REPO="${SCRIPT_DIR}/../regex"
+    elif [ -d "${SCRIPT_DIR}/../.git" ]; then
+        REPO="${SCRIPT_DIR}/.."
+    else
+        REPO="git@github.com:kiankyars/regex.git"
+    fi
+fi
+
+if [ -d "$REPO/.git" ]; then
+    REPO_PATH="$(cd "$REPO" && pwd)"
+    WORKSPACE_ROOT="$(cd "$(dirname "$REPO_PATH")" && pwd)"
+else
+    WORKSPACE_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+fi
+
+WORKSPACE="${WORKSPACE_ROOT}/workspace-${AGENT_ID}"
+PROMPT_PATH="${SCRIPT_DIR}/AGENT_PROMPT.md"
+
+if [ ! -f "$PROMPT_PATH" ]; then
+    echo "ERROR: AGENT_PROMPT.md not found at ${PROMPT_PATH}" >&2
+    exit 1
+fi
 
 # Clone if needed
 if [ ! -d "$WORKSPACE/.git" ]; then

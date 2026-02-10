@@ -2,13 +2,14 @@
 # launch_agents.sh — spawns agents in screen sessions
 # Usage: ./launch_agents.sh <num_agents>
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NUM_AGENTS=${1:-2}
 
 echo "=== Regex Agent Team Launcher ==="
 
 for i in $(seq 1 "$NUM_AGENTS"); do
     echo "[launch] Starting agent $i in screen 'agent-$i'..."
-    screen -dmS "agent-$i" bash -c "AGENT_ID=$i ./agent_loop.sh"
+    screen -dmS "agent-$i" bash -c "AGENT_ID=$i \"$SCRIPT_DIR/agent_loop.sh\""
     echo "[launch] Agent $i running"
 
     # Stagger starts to avoid simultaneous API hits

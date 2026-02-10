@@ -14,8 +14,7 @@ if [ "$1" = "--fast" ]; then
     SEED="${AGENT_ID:-0}"
 fi
 
-# Build first
-echo "Building..."
+set -euo pipefail
 cargo build --release 2>&1 | tail -5
 if [ $? -ne 0 ]; then
     echo "ERROR: Build failed"
