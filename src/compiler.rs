@@ -48,6 +48,11 @@ pub enum Inst {
 pub struct Program {
     pub insts: Vec<Inst>,
     pub n_groups: usize,
+    /// If the pattern must start with a specific literal character, store it here.
+    /// Used by the VM to skip starting positions that can't possibly match.
+    pub first_char: Option<char>,
+    /// Whether the pattern is anchored at the start (^).
+    pub anchored_start: bool,
 }
 
 /// Compile an AST into a bytecode program.
@@ -55,7 +60,24 @@ pub fn compile(ast: &AstNode, n_groups: usize) -> Program {
     let mut insts = Vec::new();
     emit(&mut insts, ast);
     insts.push(Inst::Match);
-    Program { insts, n_groups }
+    let first_char = extract_first_char(&insts);
+    let anchored_start = matches!(insts.first(), Some(Inst::AssertStart));
+    Program { insts, n_groups, first_char, anchored_start }
+}
+
+/// Extract the first required literal character from the instruction stream, if any.
+fn extract_first_char(insts: &[Inst]) -> Option<char> {
+    match insts.first()? {
+        Inst::Char(ch) => Some(*ch),
+        // If the first instruction is AssertStart, check the next one
+        Inst::AssertStart => {
+            match insts.get(1)? {
+                Inst::Char(ch) => Some(*ch),
+                _ => None,
+            }
+        }
+        _ => None,
+    }
 }
 
 fn emit(insts: &mut Vec<Inst>, node: &AstNode) {

@@ -168,6 +168,37 @@ run_test "[a-z0-9]" "5" "MATCH:5" "multiple ranges in class"
 run_test "(?=a)a" "a" "MATCH:a" "lookahead then match"
 run_test "(?=.*b)a.b" "axb" "MATCH:axb" "lookahead with dot star"
 
+# === QUANTIFIER EDGE CASES ===
+run_test "a{0}" "b" "MATCH:" "quantifier zero exact"
+run_test "(a){3}" "aaa" "MATCH:aaa" "quantified capturing group"
+
+# === MULTI-BACKREFERENCE ===
+run_test "(a)(b)\\2\\1" "abba" "MATCH:abba" "multi group backreference"
+
+# === ALTERNATION ORDERING ===
+run_test "abc|ab|a" "ab" "MATCH:ab" "alternation left-to-right priority"
+
+# === REAL-WORLD PATTERNS ===
+run_test "(\\d{1,3}\\.){3}\\d{1,3}" "192.168.1.1" "MATCH:192.168.1.1" "IP address pattern"
+run_test "[\\da-f]+" "deadbeef123" "MATCH:deadbeef123" "hex shorthand in char class"
+run_test "[\\w.]+@[\\w.]+" "user@example.com" "MATCH:user@example.com" "email-like pattern"
+
+# === ADVANCED LOOKAROUND ===
+run_test "\\w+(?=\\s)" "hello world" "MATCH:hello" "lookahead word before space"
+run_test "(?<=\\s)\\w+" "hello world" "MATCH:world" "lookbehind word after space"
+run_test "a(?=$)" "a" "MATCH:a" "lookahead at end of string"
+
+# === NON-GREEDY GROUPS ===
+run_test "<(.+?)>" "<a><b>" "MATCH:<a>" "non-greedy angle brackets"
+
+# === NESTED AND COMBINED GROUPS ===
+run_test "((a)(b))" "ab" "MATCH:ab" "deeply nested captures"
+run_test "(?:a|b){2}" "ab" "MATCH:ab" "non-capturing quantified alternation"
+
+# === BOUNDARY CASES ===
+run_test "^$" "" "MATCH:" "empty string with both anchors"
+run_test "[\\\\]" "a\\b" "MATCH:\\" "backslash in character class"
+
 # === REPORT ===
 echo ""
 echo "================================"

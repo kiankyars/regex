@@ -30,8 +30,37 @@ pub fn search(program: &Program, input: &str) -> Option<MatchResult> {
     let chars: Vec<char> = input.chars().collect();
     let n_slots = (program.n_groups + 1) * 2;
 
+    // If anchored at start, only try position 0
+    if program.anchored_start {
+        let mut captures = vec![None; n_slots];
+        captures[0] = Some(0);
+        let mut undo_log = Vec::new();
+        if exec(program, &chars, 0, 0, &mut captures, &mut undo_log, 0) {
+            captures[1] = Some(captures[1].unwrap_or(0));
+            let end = captures[1].unwrap();
+            return Some(MatchResult {
+                start: 0,
+                end,
+                captures,
+            });
+        }
+        return None;
+    }
+
     // Try at each starting position
     for start in 0..=chars.len() {
+        // First-char optimization: skip positions where the first required char doesn't match
+        if let Some(fc) = program.first_char {
+            if start < chars.len() {
+                if chars[start] != fc {
+                    continue;
+                }
+            } else {
+                // At end of input, a required first char can't match
+                continue;
+            }
+        }
+
         let mut captures = vec![None; n_slots];
         captures[0] = Some(start);
         let mut undo_log = Vec::new();
