@@ -5,11 +5,22 @@
 /// - Undo log instead of full captures.clone() on Split (save/restore only changed slots)
 /// - Recursion depth limit to prevent stack overflow on pathological inputs
 
-use crate::ast::{ClassItem, ShorthandKind};
+use crate::ast::{ClassItem, RegexFlags, ShorthandKind};
 use crate::compiler::{Inst, Program};
 
 /// Maximum recursion depth for the backtracking VM.
 const MAX_DEPTH: usize = 10_000;
+
+/// Active flag state — depth counters for nested flag regions.
+#[derive(Clone, Copy)]
+struct FlagState {
+    /// Case-insensitive depth (>0 means active).
+    ci: usize,
+    /// Dotall depth (>0 means `.` matches `\n`).
+    dotall: usize,
+    /// Multiline depth (>0 means `^`/`$` match line boundaries).
+    multiline: usize,
+}
 
 /// Result of a match attempt.
 pub struct MatchResult {

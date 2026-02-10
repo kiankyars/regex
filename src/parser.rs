@@ -303,18 +303,29 @@ impl Parser {
                         _ => Err("Invalid lookbehind syntax".to_string()),
                     }
                 }
-                Some('i') => {
-                    self.advance(); // consume 'i'
+                Some(ch) if ch == 'i' || ch == 's' || ch == 'm' => {
+                    // Parse inline flags: (?flags:...) or (?flags) form
+                    let flags = self.parse_inline_flags()?;
                     if self.peek() == Some(':') {
-                        // (?i:...) — case-insensitive non-capturing group
+                        // (?flags:...) — scoped flags group
                         self.advance();
                         let node = self.parse_alternation()?;
                         self.expect(')')?;
-                        Ok(AstNode::CaseInsensitive {
+                        Ok(AstNode::InlineFlags {
                             node: Box::new(node),
+                            flags,
+                        })
+                    } else if self.peek() == Some(')') {
+                        // (?flags) — standalone flags apply to rest of current group
+                        self.advance();
+                        // Parse the rest of the current concatenation with flags applied
+                        let rest = self.parse_concat()?;
+                        Ok(AstNode::InlineFlags {
+                            node: Box::new(rest),
+                            flags,
                         })
                     } else {
-                        Err("Unsupported flag syntax; use (?i:...) for case-insensitive groups".to_string())
+                        Err("Invalid flag syntax; use (?flags:...) or (?flags)".to_string())
                     }
                 }
                 _ => Err("Invalid group syntax after '(?'".to_string()),
@@ -330,6 +341,22 @@ impl Parser {
                 node: Box::new(node),
             })
         }
+    }
+
+    /// Parse inline flags (i, m, s) from the current position.
+    /// Assumes the parser is positioned at the first flag character (already peeked).
+    /// Consumes all consecutive flag characters.
+    fn parse_inline_flags(&mut self) -> Result<RegexFlags, String> {
+        let mut flags = RegexFlags::default();
+        while let Some(ch) = self.peek() {
+            match ch {
+                'i' => { flags.case_insensitive = true; self.advance(); }
+                'm' => { flags.multiline = true; self.advance(); }
+                's' => { flags.dotall = true; self.advance(); }
+                _ => break,
+            }
+        }
+        Ok(flags)
     }
 
     /// Parse a character class: `[abc]`, `[a-z]`, `[^abc]`.

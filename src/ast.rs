@@ -47,9 +47,11 @@ pub enum AstNode {
         node: Box<AstNode>,
         positive: bool,
     },
-    /// Case-insensitive wrapper `(?i:...)` — contents match case-insensitively.
-    CaseInsensitive {
+    /// Inline flags wrapper `(?flags:...)` — contents match with the given flags active.
+    /// Flags may include: i (case-insensitive), s (dotall), m (multiline).
+    InlineFlags {
         node: Box<AstNode>,
+        flags: RegexFlags,
     },
 }
 
@@ -96,6 +98,17 @@ pub enum ShorthandKind {
     Space,
     /// `\S` — non-whitespace.
     NonSpace,
+}
+
+/// Inline regex flags (i, s, m).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct RegexFlags {
+    /// Case-insensitive matching.
+    pub case_insensitive: bool,
+    /// Dotall mode: `.` matches newline.
+    pub dotall: bool,
+    /// Multiline mode: `^` and `$` match at line boundaries.
+    pub multiline: bool,
 }
 
 /// Anchor kind.
