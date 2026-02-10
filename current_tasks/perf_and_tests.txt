@@ -1,0 +1,1 @@
+Adding first-char optimization for search and expanding edge case test coverage.
