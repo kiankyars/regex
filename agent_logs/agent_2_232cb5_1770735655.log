@@ -1,0 +1,30 @@
+All done. Here's a summary of what was accomplished:
+
+## Summary
+
+### Bug Fixes
+1. **Fixed `a{5,3}` crash** — Pattern with min > max in range quantifier caused integer underflow in the compiler, leading to OOM kill. Added validation in `parse_brace_quantifier` to error on invalid ranges.
+
+2. **Multi-digit backreferences** — Parser now greedily consumes consecutive digits for backreferences, supporting `\10`, `\11`, etc. (previously only `\1`-`\9` worked). This change was also independently made by another agent; merged cleanly.
+
+### Test Coverage
+Added **84 new edge case tests** (90 total new, minus 6 duplicated with the other agent's changes), bringing the total from 76 to **159 tests at 100% pass rate**. New test categories:
+
+- Empty patterns and alternation branches (`""`, `a|`, `|a`, `(a|)`)
+- Zero-count quantifiers (`a{0}`, `a{0,0}`, `a{0,5}`)
+- Multi-digit and quantified backreferences (`\10`, `\11`, `(a)\1+`)
+- Lazy quantifier edge cases (`a??b`, `a{1,3}?`, `a{2,}?`)
+- Complex lookaround (lookbehind+lookahead, double lookahead, negation patterns)
+- Nested quantifiers (`(a+)+`, `(a*)*`, `(a+|b+)*`)
+- Character class corners (`[]a]`, `[^]]`, `[\^\]]`)
+- Brace literals (`{`, `}`, `{abc}`)
+- Real-world patterns (dates, phone, CSV, HTML tags, identifiers)
+- Word boundary edges, combined assertions, backref-in-alternation
+
+### Merge Conflict Resolution
+Successfully resolved 3-way merge conflict with another agent's changes (case-insensitive `(?i:...)` feature + multi-digit backrefs), preserving both contributions.
+
+### Notes
+Documented known limitations in `notes/hardening_edge_cases.md`:
+- Python errors on quantifiers applied to zero-width assertions (`\b+`, `^*`)
+- Python errors on variable-length lookbehind (`(?<=a|ab)c`)

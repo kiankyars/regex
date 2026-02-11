@@ -1,4 +1,2 @@
 /target
-/agent_logs
-test_failures.log
 Cargo.lock

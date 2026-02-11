@@ -1,0 +1,7 @@
+
+FAIL test 32: pattern='\' input='a' desc='escaped backslash'
+  expected: NO_MATCH
+  actual:   MATCH:\nFAIL test 33: pattern='(a+)\1' input='aaaa' desc='backreference'
+  expected: MATCH:aaaa
+GROUP 1:aa
+  actual:   NO_MATCH

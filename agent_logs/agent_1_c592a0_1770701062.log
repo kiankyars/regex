@@ -1,0 +1,28 @@
+All done. Here's a summary of what was accomplished:
+
+## Summary
+
+Built a complete regex engine from scratch in Rust, achieving **97% test pass rate (37/38)** on the first implementation.
+
+### Architecture
+- **`src/ast.rs`** — AST types (Literal, Dot, Concat, Alternation, Quantifier, CharClass, Group, Lookahead, etc.)
+- **`src/parser.rs`** — Recursive descent parser: regex string → AST
+- **`src/compiler.rs`** — AST → bytecode instructions (Char, Split, Jump, Save, etc.)
+- **`src/vm.rs`** — Backtracking VM executor that runs bytecode against input
+- **`src/main.rs`** — CLI binary matching the test harness's expected output format
+
+### Features Implemented
+All 15 features from the priority list:
+- Literals, concatenation, dot
+- Quantifiers: `*`, `+`, `?`, `{n}`, `{n,}`, `{n,m}` (greedy and lazy)
+- Character classes: `[abc]`, `[a-z]`, `[^abc]`
+- Shorthand classes: `\d`, `\w`, `\s` and negations
+- Anchors: `^`, `$`, `\b`
+- Alternation: `a|b`
+- Groups: `(...)` capturing, `(?:...)` non-capturing
+- Escape sequences
+- Backreferences: `\1`, `\2`
+- Lookahead/lookbehind: `(?=...)`, `(?!...)`, `(?<=...)`, `(?<!...)`
+
+### The One Failing Test
+Test 32 (escaped backslash) fails due to a test harness bug: Python's non-raw string interprets `\b` as backspace, while our binary receives the literal bytes. Our engine is correct. Documented in `notes/test_harness_backslash_bug.md`.

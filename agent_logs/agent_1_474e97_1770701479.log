@@ -1,0 +1,20 @@
+All done. Here's a summary of what was accomplished:
+
+## Summary
+
+### Test Harness Fix (Test 32)
+- **Root cause**: The Python oracle received pattern/input via string interpolation (`'''${input}'''`), causing Python to interpret escape sequences like `\b` as backspace — different from what the binary received via shell argv.
+- **Fix**: Changed the oracle to pass pattern and input via `sys.argv` using a heredoc, ensuring Python and the binary receive identical bytes.
+
+### Edge Case Tests Added (16 new tests)
+- **Word boundaries**: `\b`, `\B` 
+- **Negated shorthands**: `\D`, `\W`, `\S`
+- **Unbounded repetition**: `{n,}`, lazy `{n,m}?`
+- **Nested groups**: `((a)(b))`, alternation in groups
+- **Greedy vs lazy**: `(.*)` vs `(.*?)`
+- **Char class edges**: hyphen in class, multiple ranges
+- **Lookaround combos**: lookahead + match, lookahead with `.*`
+
+### Result
+- **Before**: 97% (37/38)
+- **After**: **100% (54/54)** — all tests passing
